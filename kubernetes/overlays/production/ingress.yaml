@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stock-prediction-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  tls:
+  - hosts:
+    - stockprediction.example.com
+    secretName: stockprediction-tls
+  rules:
+  - host: stockprediction.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dashboard-service
+            port:
+              number: 80
+      - path: /api/data
+        pathType: Prefix
+        backend:
+          service:
+            name: data-ingestion
+            port:
+              number: 8000
+      - path: /api/models
+        pathType: Prefix
+        backend:
+          service:
+            name: model-service
+            port:
+              number: 8000

@@ -1,0 +1,51 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+bases:
+  - ../../base
+
+namePrefix: prod-
+
+resources:
+  - secrets.yaml
+  - ingress.yaml
+
+patchesStrategicMerge:
+  - replicas.yaml
+  - resource-limits.yaml
+
+configMapGenerator:
+  - name: stock-prediction-config
+    literals:
+      - DATA_FETCH_INTERVAL_MINUTES=15
+      - FEATURE_CALCULATION_INTERVALS=5,10,20,50,100,200
+      - DEFAULT_PREDICTION_HORIZON_DAYS=5
+      - MODEL_BATCH_SIZE=32
+      - REDIS_CACHE_TTL=300
+
+images:
+  - name: stock-prediction-platform/data-ingestion
+    newName: ${REGISTRY_URL}/stock-prediction-platform/data-ingestion
+    newTag: ${IMAGE_TAG}
+  - name: stock-prediction-platform/model-service
+    newName: ${REGISTRY_URL}/stock-prediction-platform/model-service
+    newTag: ${IMAGE_TAG}
+  - name: stock-prediction-platform/dashboard-service
+    newName: ${REGISTRY_URL}/stock-prediction-platform/dashboard-service
+    newTag: ${IMAGE_TAG}
+
+vars:
+  - name: REGISTRY_URL
+    objref:
+      kind: ConfigMap
+      name: stock-prediction-config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.REGISTRY_URL
+  - name: IMAGE_TAG
+    objref:
+      kind: ConfigMap
+      name: stock-prediction-config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.IMAGE_TAG
