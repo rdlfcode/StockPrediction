@@ -8,9 +8,15 @@ spec:
       containers:
       - name: data-ingestion
         resources:
+          # Minimum resources guaranteed to the container
+          # 1Gi RAM is sufficient for data processing operations
+          # 500m CPU = 0.5 CPU cores
           requests:
             memory: "1Gi"
             cpu: "500m"
+          # Maximum resources the container can use
+          # 2Gi RAM allows for handling larger datasets without OOM errors
+          # 1000m CPU = 1 CPU core
           limits:
             memory: "2Gi"
             cpu: "1000m"
@@ -25,9 +31,15 @@ spec:
       containers:
       - name: model-service
         resources:
+          # Minimum resources guaranteed to the container
+          # 4Gi RAM is needed for loading models into memory
+          # 2000m CPU = 2 CPU cores for model training/inference
           requests:
             memory: "4Gi"
             cpu: "2000m"
+          # Maximum resources the container can use
+          # 8Gi RAM allows for training larger models
+          # 4000m CPU = 4 CPU cores for parallel processing
           limits:
             memory: "8Gi"
             cpu: "4000m"
@@ -42,9 +54,15 @@ spec:
       containers:
       - name: dashboard-service
         resources:
+          # Minimum resources guaranteed to the container
+          # 1Gi RAM is sufficient for serving web content
+          # 500m CPU = 0.5 CPU cores
           requests:
             memory: "1Gi"
             cpu: "500m"
+          # Maximum resources the container can use
+          # 2Gi RAM allows for handling many concurrent connections
+          # 1000m CPU = 1 CPU core
           limits:
             memory: "2Gi"
             cpu: "1000m"

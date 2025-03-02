@@ -1,0 +1,127 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_stockprediction
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio pytest-cov
+        pip install -r services/data-ingestion/requirements.txt
+        pip install -r services/model-service/requirements.txt
+        pip install -r services/dashboard-service/requirements.txt
+    
+    - name: Run tests
+      run: |
+        pytest services/*/tests/ --cov=services/ --cov-report=xml
+    
+    - name: Upload coverage report
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ secrets.DOCKER_REGISTRY }}
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Extract metadata
+      id: meta
+      run: |
+        echo "::set-output name=version::$(date +'%Y%m%d%H%M%S')-${GITHUB_SHA::8}"
+        echo "::set-output name=branch::${GITHUB_REF#refs/heads/}"
+    
+    - name: Build and push data-ingestion image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: docker/data-ingestion/Dockerfile
+        push: true
+        tags: ${{ secrets.DOCKER_REGISTRY }}/stock-prediction-platform/data-ingestion:${{ steps.meta.outputs.version }}
+        cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/stock-prediction-platform/data-ingestion:latest
+        cache-to: type=inline
+    
+    - name: Build and push model-service image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: docker/model-service/Dockerfile
+        push: true
+        tags: ${{ secrets.DOCKER_REGISTRY }}/stock-prediction-platform/model-service:${{ steps.meta.outputs.version }}
+        cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/stock-prediction-platform/model-service:latest
+        cache-to: type=inline
+    
+    - name: Build and push dashboard-service image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: docker/dashboard/Dockerfile
+        push: true
+        tags: ${{ secrets.DOCKER_REGISTRY }}/stock-prediction-platform/dashboard-service:${{ steps.meta.outputs.version }}
+        cache-from: type=registry,ref=${{ secrets.DOCKER_REGISTRY }}/stock-prediction-platform/dashboard-service:latest
+        cache-to: type=inline
+    
+    - name: Update deployment manifests
+      if: steps.meta.outputs.branch == 'main'
+      run: |
+        cd kubernetes/overlays/production
+        sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ steps.meta.outputs.version }}|g" kustomization.yaml
+        git config --global user.name "GitHub CI/CD"
+        git config --global user.email "ci-cd@example.com"
+        git add kustomization.yaml
+        git commit -m "Automated: Update production image tag to ${{ steps.meta.outputs.version }}"
+        git push

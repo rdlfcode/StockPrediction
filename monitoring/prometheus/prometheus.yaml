@@ -6,19 +6,24 @@ metadata:
 data:
   prometheus.yml: |
     global:
+      # How frequently to scrape targets (15s provides good response time)
       scrape_interval: 15s
+      # How frequently to evaluate rules (15s aligns with scrape_interval)
       evaluation_interval: 15s
 
     alerting:
       alertmanagers:
       - static_configs:
         - targets:
+          # AlertManager endpoint for sending alerts
           - alertmanager:9093
 
     rule_files:
+      # Path to alert rules files
       - /etc/prometheus/rules/*.yml
 
     scrape_configs:
+      # Job for scraping Kubernetes API server metrics
       - job_name: 'kubernetes-apiservers'
         kubernetes_sd_configs:
         - role: endpoints
@@ -31,6 +36,7 @@ data:
           action: keep
           regex: default;kubernetes;https
 
+      # Job for scraping Kubernetes node metrics
       - job_name: 'kubernetes-nodes'
         scheme: https
         tls_config:
@@ -48,6 +54,7 @@ data:
           target_label: __metrics_path__
           replacement: /api/v1/nodes/${1}/proxy/metrics
 
+      # Job for scraping Kubernetes pod metrics
       - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:
         - role: pod
@@ -73,6 +80,7 @@ data:
           action: replace
           target_label: kubernetes_pod_name
 
+      # Job for scraping Stock Prediction Platform services
       - job_name: 'stock-prediction-services'
         kubernetes_sd_configs:
         - role: endpoints
