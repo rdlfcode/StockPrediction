@@ -7,7 +7,6 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
 from .base_model import BaseModel
-from .tft_architecture import TemporalFusionTransformerModel
 
 class TemporalFusionTransformerImplementation(BaseModel):
     """Implementation of the Temporal Fusion Transformer model."""
@@ -254,7 +253,7 @@ class TemporalFusionTransformerImplementation(BaseModel):
         forecast_horizon = instance.hyperparameters.get("forecast_horizon", 5)
         
         # Initialize model
-        instance.model = TemporalFusionTransformerModel(
+        instance.model = TemporalFusionTransformerImplementation(
             num_static_features=num_static_features,
             num_time_varying_features=num_time_varying_features,
             hidden_dim=hidden_dim,
