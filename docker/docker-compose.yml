@@ -1,143 +1,101 @@
 version: '3.8'
 
 services:
-  # PostgreSQL database for structured data
   postgres:
     image: postgres:15
     environment:
-      # PostgreSQL username - from .env
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      # PostgreSQL password - from .env
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      # PostgreSQL database name - from .env
       POSTGRES_DB: ${POSTGRES_DB:-stockprediction}
     volumes:
-      # Persistent storage for database files
       - postgres-data:/var/lib/postgresql/data
-      # Database initialization scripts
       - ./database/init:/docker-entrypoint-initdb.d
     ports:
-      # Map container port 5432 to host port 5432
       - "5432:5432"
     healthcheck:
-      # Check database availability every 10s
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # TimescaleDB for time-series data (extends PostgreSQL)
   timescaledb:
     image: timescale/timescaledb:latest-pg15
     environment:
-      # PostgreSQL username - from .env
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      # PostgreSQL password - from .env
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      # TimescaleDB database name
-      POSTGRES_DB: ${POSTGRES_DB:-stockprediction}_timeseries
+      POSTGRES_DB: ${POSTGRES_DB:-stockprediction_timeseries}
     volumes:
-      # Persistent storage for database files
       - timescaledb-data:/var/lib/postgresql/data
-      # Database initialization scripts
       - ./database/init:/docker-entrypoint-initdb.d
     ports:
-      # Map container port 5432 to host port 5433 (avoid conflict with postgres)
       - "5433:5432"
     healthcheck:
-      # Check database availability every 10s
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis for caching and message queuing
   redis:
     image: redis:7-alpine
     ports:
-      # Map container port 6379 to host port 6379
       - "6379:6379"
     volumes:
-      # Persistent storage for Redis data
       - redis-data:/data
     healthcheck:
-      # Check Redis availability every 10s
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Kafka message broker for event streaming
   kafka:
     image: confluentinc/cp-kafka:7.3.0
     depends_on:
       - zookeeper
     ports:
-      # Map container port 9092 to host port 9092
       - "9092:9092"
     environment:
-      # Kafka broker ID (must be unique per broker)
       KAFKA_BROKER_ID: 1
-      # ZooKeeper connection string
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Advertised listeners for internal and external connections
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      # Security protocol mappings
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      # Inter-broker listener name
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      # Replication factor for offset topics (1 for single broker)
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     healthcheck:
-      # Check Kafka availability every 30s
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 30s
       timeout: 10s
       retries: 5
 
-  # ZooKeeper for Kafka coordination
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.0
     ports:
-      # Map container port 2181 to host port 2181
       - "2181:2181"
     environment:
-      # ZooKeeper client port
       ZOOKEEPER_CLIENT_PORT: 2181
-      # ZooKeeper tick time in milliseconds
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
-      # Check ZooKeeper availability every 30s
       test: ["CMD", "zkServer.sh", "status"]
       interval: 30s
       timeout: 10s
       retries: 5
 
-  # MinIO object storage for models and datasets
   minio:
     image: minio/minio
     ports:
-      # Map container port 9000 to host port 9000 (API)
       - "9000:9000"
-      # Map container port 9001 to host port 9001 (Console)
       - "9001:9001"
     environment:
-      # MinIO root username - from .env
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      # MinIO root password - from .env
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
-      # Persistent storage for MinIO data
       - minio-data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      # Check MinIO availability every 30s
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
 
-  # Data ingestion service
   data-ingestion:
     build:
       context: .
@@ -148,21 +106,15 @@ services:
       - kafka
       - redis
     volumes:
-      # Mount service code for hot reloading in development
       - ./services/data-ingestion:/app
     environment:
-      # Database connection strings
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stockprediction
       - TIMESCALEDB_URL=postgresql://postgres:postgres@timescaledb:5433/stockprediction_timeseries
-      # Kafka connection string
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
-      # Redis connection string
       - REDIS_URL=redis://redis:6379/0
     ports:
-      # Map container port 8000 to host port 8001
       - "8001:8000"
 
-  # Model service for training and inference
   model-service:
     build:
       context: .
@@ -174,33 +126,25 @@ services:
       - redis
       - minio
     volumes:
-      # Mount service code for hot reloading in development
       - ./services/model-service:/app
     environment:
-      # Database connection strings
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stockprediction
       - TIMESCALEDB_URL=postgresql://postgres:postgres@timescaledb:5433/stockprediction_timeseries
-      # Kafka connection string
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
-      # Redis connection string
       - REDIS_URL=redis://redis:6379/0
-      # MinIO connection settings
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      # Map container port 8000 to host port 8002
       - "8002:8000"
     deploy:
       resources:
         reservations:
           devices:
-            # Reserve a GPU for model training (if available)
             - driver: nvidia
               count: 1
               capabilities: [gpu]
 
-  # Dashboard service for visualization
   dashboard-service:
     build:
       context: .
@@ -211,26 +155,17 @@ services:
       - redis
       - model-service
     volumes:
-      # Mount service code for hot reloading in development
       - ./services/dashboard-service:/app
     environment:
-      # Database connection strings
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/stockprediction
       - TIMESCALEDB_URL=postgresql://postgres:postgres@timescaledb:5433/stockprediction_timeseries
-      # Redis connection string
       - REDIS_URL=redis://redis:6379/0
-      # Model service URL
       - MODEL_SERVICE_URL=http://model-service:8000
     ports:
-      # Map container port 8000 to host port 8000
       - "8000:8000"
 
 volumes:
-  # Persistent volume for PostgreSQL data
   postgres-data:
-  # Persistent volume for TimescaleDB data
   timescaledb-data:
-  # Persistent volume for Redis data
   redis-data:
-  # Persistent volume for MinIO data
   minio-data:
